@@ -12,10 +12,10 @@ const PORT = process.env.PORT || 3000;
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const API_KEY = process.env.GEMINI_API_KEY || "";
 
-// Tiempo máximo de espera de una consulta: 60 segundos.
-const REQUEST_TIMEOUT_MS = 60000;
+// Tiempo máximo de espera.
+const REQUEST_TIMEOUT_MS = 35000;
 
-// Instrucciones generales del asistente.
+// Instrucciones generales.
 const SYSTEM = `Sos un asistente de apoyo para el seguimiento administrativo de expedientes de compras.
 
 Trabajás exclusivamente con los datos estructurados recibidos en cada consulta.
@@ -58,7 +58,7 @@ async function getAIClient() {
   return aiClientPromise;
 }
 
-// Mensajes de error comprensibles.
+// Errores comprensibles.
 function publicError(error) {
   const status = Number(error?.status || error?.code || 0);
 
@@ -96,14 +96,15 @@ function publicError(error) {
   };
 }
 
-// Endpoint principal del asistente.
+// Consulta principal.
 app.post("/api/assistant", async (req, res) => {
   const inicio = Date.now();
+  let timeoutId;
 
   try {
     if (!API_KEY) {
       return res.status(503).json({
-        error: "La IA todavía no está configurada. Falta GEMINI_API_KEY en Render."
+        error: "La IA no está configurada. Falta GEMINI_API_KEY en Render."
       });
     }
 
@@ -121,14 +122,14 @@ app.post("/api/assistant", async (req, res) => {
       });
     }
 
-    // Para preguntas generales, no enviamos registros innecesarios.
+    const esAnalisis = mode === "analysis";
     const pregunta = String(question || "").trim().slice(0, 3000);
 
-    const esAnalisis = mode === "analysis";
-
+    // En el chat se limita el volumen enviado.
+    // En análisis se conservan todos los registros.
     const registrosParaEnviar = esAnalisis
       ? records
-      : (records.length > 100 ? records.slice(0, 100) : records);
+      : records.slice(0, 100);
 
     const tarea = esAnalisis
       ? `Realizá un análisis de seguimiento con estos controles automáticos y registros.
@@ -162,7 +163,8 @@ ${registrosTexto}`;
 
     console.log("Iniciando consulta a Gemini:", {
       modo: esAnalisis ? "análisis" : "chat",
-      cantidadRegistros: registrosParaEnviar.length
+      cantidadRegistros: registrosParaEnviar.length,
+      modelo: MODEL
     });
 
     const ai = await getAIClient();
@@ -173,62 +175,77 @@ ${registrosTexto}`;
       });
     }
 
-    // Limita el tiempo de espera para evitar consultas indefinidas.
-    let timeoutId;
+    console.log("Cliente Gemini inicializado. Enviando consulta...");
 
-    try {
-      const response = await Promise.race([
-        ai.models.generateContent({
-          model: MODEL,
-          contents: prompt,
-          config: {
-            thinkingConfig: {
-              thinkingLevel: "low"
-            },
-            maxOutputTokens: esAnalisis ? 2048 : 1024
+    // Límite de seguridad del servidor.
+    const consulta = ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+      config: {
+        thinkingConfig: {
+          thinkingLevel: "low"
+        },
+        maxOutputTokens: esAnalisis ? 2048 : 1024,
+
+        // Evita solicitudes adicionales de continuación.
+        automaticContinuation: false,
+
+        // Configuración HTTP del SDK de Google.
+        httpOptions: {
+          timeout: 30000,
+          retryOptions: {
+            attempts: 1
           }
-        }),
-
-        new Promise((_, reject) => {
-          timeoutId = setTimeout(() => {
-            reject(new Error("REQUEST_TIMEOUT"));
-          }, REQUEST_TIMEOUT_MS);
-        })
-      ]);
-
-      clearTimeout(timeoutId);
-
-      const answer = response.text?.trim();
-
-      if (!answer) {
-        return res.status(502).json({
-          error: "Gemini no devolvió una respuesta de texto. Intentá nuevamente."
-        });
+        }
       }
+    });
 
-      console.log(`Gemini respondió en ${Date.now() - inicio} ms`);
+    // Tiempo máximo de espera de nuestra aplicación.
+    const respuesta = await Promise.race([
+      consulta,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("REQUEST_TIMEOUT"));
+        }, REQUEST_TIMEOUT_MS);
+      })
+    ]);
 
-      return res.json({ answer });
+    clearTimeout(timeoutId);
 
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const answer = respuesta.text?.trim();
 
-  } catch (error) {
+    if (!answer) {
+      console.error("Gemini respondió sin texto.");
 
-    if (error.message === "REQUEST_TIMEOUT") {
-      console.error("Tiempo de espera agotado:", Date.now() - inicio);
-
-      return res.status(504).json({
-        error: "La consulta está tardando demasiado. Intentá nuevamente con una pregunta más breve."
+      return res.status(502).json({
+        error: "Gemini no devolvió una respuesta de texto. Intentá nuevamente."
       });
     }
 
-    console.error("Error Gemini:", {
+    console.log(`Gemini respondió en ${Date.now() - inicio} ms`);
+
+    return res.json({ answer });
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    const mensaje = String(error?.message || "");
+
+    const esTimeout =
+      mensaje === "REQUEST_TIMEOUT" ||
+      /timeout|timed out|aborted/i.test(mensaje);
+
+    console.error("Error en consulta Gemini:", {
       status: error?.status || error?.code || "unknown",
-      message: error?.message || "Unknown error",
+      message: mensaje || "Unknown error",
       tiempo: Date.now() - inicio
     });
+
+    if (esTimeout) {
+      return res.status(504).json({
+        error: "Gemini no respondió dentro del tiempo esperado. Intentá nuevamente."
+      });
+    }
 
     const safe = publicError(error);
 
@@ -248,7 +265,7 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// Inicio del servidor.
+// Inicio.
 app.listen(PORT, () => {
   console.log(`Asistente de Compras disponible en el puerto ${PORT}`);
   console.log(
