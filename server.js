@@ -13,7 +13,7 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const API_KEY = process.env.GEMINI_API_KEY || "";
 
 // Tiempo máximo de espera.
-const REQUEST_TIMEOUT_MS = 35000;
+const REQUEST_TIMEOUT_MS = 125000;
 
 // Instrucciones generales.
 const SYSTEM = `Sos un asistente de apoyo para el seguimiento administrativo de expedientes de compras.
@@ -192,7 +192,7 @@ ${registrosTexto}`;
 
         // Configuración HTTP del SDK de Google.
         httpOptions: {
-          timeout: 30000,
+          timeout: 120000,
           retryOptions: {
             attempts: 1
           }
