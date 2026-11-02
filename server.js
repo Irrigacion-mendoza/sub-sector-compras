@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 const PORT = process.env.PORT || 3000;
-const MODEL = process.env.GEMINI_MODEL || "MODELO_VALIDADO";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const API_KEY = process.env.GEMINI_API_KEY || "";
 // Configuración de tiempos y reintentos.
 const REQUEST_TIMEOUT_MS = 65000;
@@ -56,7 +56,7 @@ function publicError(error) {
   if (status === 400) {
     return {
       status: 400,
-      message: "Gemini rechazó la solicitud. Revisá la configuración."
+      message: " rechazó la solicitud. Revisá la configuración."
     };
   }
   if (status === 401 || status === 403) {
