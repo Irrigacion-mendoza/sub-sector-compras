@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 const PORT = process.env.PORT || 3000;
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const MODEL = process.env.GEMINI_MODEL || "MODELO_VALIDADO";
 const API_KEY = process.env.GEMINI_API_KEY || "";
 // Configuración de tiempos y reintentos.
 const REQUEST_TIMEOUT_MS = 65000;
@@ -68,7 +68,7 @@ function publicError(error) {
   if (status === 404) {
     return {
       status: 404,
-      message: "El modelo configurado no está disponible. Revisá GEMINI_MODEL."
+      message: "El o configurado no está disponible. Revisá GEMINI_."
     };
   }
   if (status === 429) {
@@ -103,8 +103,8 @@ async function consultarGemini(ai, prompt, esAnalisis) {
     }, REQUEST_TIMEOUT_MS);
     try {
       console.log(`Gemini: iniciando intento ${intento}/${MAX_ATTEMPTS}`);
-      const respuesta = await ai.models.generateContent({
-        model: MODEL,
+      const respuesta = await ai.s.generateContent({
+        : MODEL,
         contents: prompt,
         config: {
           thinkingConfig: {
