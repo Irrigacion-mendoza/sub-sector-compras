@@ -247,6 +247,48 @@ app.get("/api/health", (_req, res) => {
     model: MODEL
   });
 });
+
+// Prueba temporal de conexión con Gemini.
+app.get("/api/test-gemini", async (req, res) => {
+  const inicio = Date.now();
+
+  try {
+    const ai = await getAIClient();
+
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: "Respondé únicamente: OK",
+      config: {
+        thinkingConfig: {
+          thinkingLevel: "low"
+        },
+        maxOutputTokens: 20,
+        httpOptions: {
+          timeout: 30000,
+          retryOptions: {
+            attempts: 1
+          }
+        }
+      }
+    });
+
+    res.json({
+      ok: true,
+      respuesta: response.text,
+      tiempo: Date.now() - inicio
+    });
+
+  } catch (error) {
+    console.error("TEST GEMINI:", error);
+
+    res.status(502).json({
+      ok: false,
+      error: error.message,
+      tiempo: Date.now() - inicio
+    });
+  }
+});
+
 // Inicio.
 app.listen(PORT, () => {
   console.log(`Asistente de Compras disponible en el puerto ${PORT}`);
